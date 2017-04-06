@@ -1,0 +1,20 @@
+# Updater
+
+A small go project to auto-update MiddleWar
+
+
+## Build
+
+```
+#!/usr/bin/env bash
+GOARCH=amd64
+URL=http://url/of/archives/
+
+GOOS=linux
+go build -o mw-autoupdater -ldflags "-X main.ROOT_URL=$URL" main.go
+
+GOOS=windows
+go build -o mw-autoupdater.exe -ldflags "-X main.ROOT_URL=$URL" main.go
+
+echo "Done"
+```
