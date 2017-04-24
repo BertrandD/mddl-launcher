@@ -11,10 +11,10 @@ GOARCH=amd64
 URL=http://url/of/archives/
 
 GOOS=linux
-go build -o mw-autoupdater -ldflags "-X main.ROOT_URL=$URL" main.go
+go build -o mw-launcher -ldflags "-X main.ROOT_URL=$URL" ui.go
 
 GOOS=windows
-go build -o mw-autoupdater.exe -ldflags "-X main.ROOT_URL=$URL" main.go
+go build -o mw-launcher.exe -ldflags "-X main.ROOT_URL=$URL" ui.go
 
 echo "Done"
 ```
