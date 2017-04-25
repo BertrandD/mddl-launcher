@@ -2,3 +2,4 @@
 dist/
 mw-autoupdater*
 build.sh
+*.iml
