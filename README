@@ -10,11 +10,9 @@ A small go project to auto-update MiddleWar
 GOARCH=amd64
 URL=http://url/of/archives/
 
-GOOS=linux
-go build -o mw-launcher -ldflags "-X main.ROOT_URL=$URL" ui.go
+GOOS=linux go build -o mw-launcher -ldflags "-X main.ROOT_URL=$URL" ui.go
 
-GOOS=windows
-go build -o mw-launcher.exe -ldflags "-X main.ROOT_URL=$URL" ui.go
+GOOS=windows CGO_ENABLED=1 CC=x86_64-w64-mingw32-gcc CXX=x86_64-w64-mingw32-g++ go build -o mw-launcher.exe -ldflags "-X main.ROOT_URL=$URL" -v
 
 echo "Done"
 ```
