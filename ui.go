@@ -4,7 +4,7 @@ import (
 	"github.com/andlabs/ui"
 	"log"
 	"time"
-	"github.com/bertrandd/updater/utils"
+	"github.com/bertrandd/launcher/utils"
 	"io/ioutil"
 	"runtime"
 	"fmt"
