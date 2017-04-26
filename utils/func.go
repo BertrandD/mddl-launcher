@@ -7,12 +7,14 @@ import (
 	"archive/tar"
 	"fmt"
 	"time"
-	"path"
 	"bytes"
 	"net/http"
-	"strconv"
 	"compress/gzip"
 	"log"
+	"encoding/json"
+	"crypto/md5"
+	"encoding/hex"
+	"github.com/jlaffaye/ftp"
 )
 
 func Mkdir(path string) {
@@ -81,16 +83,41 @@ func PrintDownloadPercent(done chan int64, path string, total int64, progress *f
 	}
 }
 
-func DownloadFile(url string, dest string, progress *float64) {
+type Manifest struct {
+	Files []File
+}
 
-	file := path.Base(url)
+type File struct {
+	Path string
+	Md5  string
+}
 
-	log.Printf("Downloading file %s from %s\n", file, url)
+func DownloadManifest(url string, manifest *Manifest) error {
+	headResp, err := http.Head(url)
+
+	if err != nil {
+		return err
+	}
+
+	defer headResp.Body.Close()
+	resp, err := http.Get(url)
+
+	if err != nil {
+		return err
+	}
+
+	defer resp.Body.Close()
+	return json.NewDecoder(resp.Body).Decode(manifest)
+}
+
+func DownloadFile(conn *ftp.ServerConn, f File, dest string, progress *float64) {
+
+	log.Printf("Downloading file %s from ftp\n", f.Path)
 
 	var path bytes.Buffer
 	path.WriteString(dest)
 	path.WriteString("/")
-	path.WriteString(file)
+	path.WriteString(f.Path)
 
 	start := time.Now()
 
@@ -103,15 +130,7 @@ func DownloadFile(url string, dest string, progress *float64) {
 
 	defer out.Close()
 
-	headResp, err := http.Head(url)
-
-	if err != nil {
-		panic(err)
-	}
-
-	defer headResp.Body.Close()
-
-	size, err := strconv.Atoi(headResp.Header.Get("Content-Length"))
+	size, err := conn.FileSize(f.Path)
 
 	if err != nil {
 		panic(err)
@@ -121,15 +140,15 @@ func DownloadFile(url string, dest string, progress *float64) {
 
 	go PrintDownloadPercent(done, path.String(), int64(size), progress)
 
-	resp, err := http.Get(url)
+	resp, err := conn.Retr(f.Path)
 
 	if err != nil {
 		panic(err)
 	}
 
-	defer resp.Body.Close()
+	defer resp.Close()
 
-	n, err := io.Copy(out, resp.Body)
+	n, err := io.Copy(out, resp)
 
 	if err != nil {
 		panic(err)
@@ -139,6 +158,13 @@ func DownloadFile(url string, dest string, progress *float64) {
 
 	elapsed := time.Since(start)
 	log.Printf("Download completed in %s", elapsed)
+
+	go func () {
+		hash, _ := hash_file_md5(path.String())
+		if hash != f.Md5 {
+			fmt.Errorf("File %s has an invalid MD5 !", path)
+		}
+	}()
 }
 
 func Ungzip(source, target string) error {
@@ -202,4 +228,36 @@ func Untar(tarball, target string) error {
 	}
 
 	return nil
+}
+
+
+func hash_file_md5(filePath string) (string, error) {
+	//Initialize variable returnMD5String now in case an error has to be returned
+	var returnMD5String string
+
+	//Open the passed argument and check for any error
+	file, err := os.Open(filePath)
+	if err != nil {
+		return returnMD5String, err
+	}
+
+	//Tell the program to call the following function when the current function returns
+	defer file.Close()
+
+	//Open a new hash interface to write to
+	hash := md5.New()
+
+	//Copy the file in the hash interface and check for any error
+	if _, err := io.Copy(hash, file); err != nil {
+		return returnMD5String, err
+	}
+
+	//Get the 16 bytes hash
+	hashInBytes := hash.Sum(nil)[:16]
+
+	//Convert the bytes to a string
+	returnMD5String = hex.EncodeToString(hashInBytes)
+
+	return returnMD5String, nil
+
 }

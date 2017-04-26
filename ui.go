@@ -9,13 +9,16 @@ import (
 	"runtime"
 	"fmt"
 	"net/http"
-	"strings"
 	"os/exec"
+	"github.com/jlaffaye/ftp"
+	"encoding/json"
 )
 
 var ROOT_URL string
 var ARCHIVE_URL string = ROOT_URL+"%s/%s"
 var URL_LATEST string = ROOT_URL+"latest"
+var FILES_DIR string = "current"
+var MANIFEST_NAME string = "manifest.json"
 
 const DIST = "./dist/"
 const LOCAL_APP_DIRECTORY = DIST+"app/"
@@ -160,6 +163,7 @@ func getCurrentVersion() (string, error) {
 }
 
 func GetLatestVersion() (version string, err error) {
+	return "v0.10.25", nil
 	response, err := http.Get(URL_LATEST)
 	if err != nil {
 		log.Fatal(err)
@@ -175,17 +179,29 @@ func GetLatestVersion() (version string, err error) {
 func Update(os, version string, progress *float64) (err error){
 	log.Println("Downloading latest version... ")
 
-	var archiveName = fmt.Sprintf(ARCHIVE_NAME_FORMAT, os)
+	manifest := utils.Manifest{}
 
-	url := fmt.Sprintf(ARCHIVE_URL, strings.TrimSpace(version), archiveName)
-	utils.DownloadFile(url, DIST, progress)
-	defer utils.DeleteFile(DIST + archiveName)
-	log.Println("Decompressing...")
-
-	err = utils.Ungzip(DIST+archiveName, DIST+"temp.tar")
-	defer utils.DeleteFile(DIST + "temp.tar")
+	log.Println("Establishing connection...")
+	conn, err := ftp.DialTimeout("s03.mordus.fr:21", 15*time.Second)
 	check(err)
-	utils.Untar(DIST+"temp.tar", LOCAL_APP_DIRECTORY)
+	log.Println("Login...")
+	conn.Login("anonymous", "")
+	defer conn.Logout()
+	log.Println("Change dir...")
+	conn.ChangeDir(FILES_DIR)
+
+	log.Println("Retrieving manifest...")
+	resp, err := conn.Retr(MANIFEST_NAME)
+	check(err)
+	defer resp.Close()
+
+	err = json.NewDecoder(resp).Decode(manifest)
+	check(err)
+
+	for _, file := range manifest.Files {
+		utils.DownloadFile(conn, file, DIST, progress)
+	}
+
 	return err
 }
 
