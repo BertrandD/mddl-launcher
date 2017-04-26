@@ -7,14 +7,12 @@ import (
 	"archive/tar"
 	"fmt"
 	"time"
-	"bytes"
-	"net/http"
 	"compress/gzip"
 	"log"
-	"encoding/json"
 	"crypto/md5"
 	"encoding/hex"
-	"github.com/jlaffaye/ftp"
+	"github.com/secsy/goftp"
+	"path"
 )
 
 func Mkdir(path string) {
@@ -92,77 +90,29 @@ type File struct {
 	Md5  string
 }
 
-func DownloadManifest(url string, manifest *Manifest) error {
-	headResp, err := http.Head(url)
+func DownloadFile(client *goftp.Client, f File, dest string) {
 
-	if err != nil {
-		return err
-	}
 
-	defer headResp.Body.Close()
-	resp, err := http.Get(url)
+	outputPath := dest+f.Path
 
-	if err != nil {
-		return err
-	}
+	log.Printf("Downloading file %s from ftp to %s\n", f.Path, outputPath)
 
-	defer resp.Body.Close()
-	return json.NewDecoder(resp.Body).Decode(manifest)
-}
+	Mkdir(path.Dir(outputPath))
 
-func DownloadFile(conn *ftp.ServerConn, f File, dest string, progress *float64) {
-
-	log.Printf("Downloading file %s from ftp\n", f.Path)
-
-	var path bytes.Buffer
-	path.WriteString(dest)
-	path.WriteString("/")
-	path.WriteString(f.Path)
-
-	start := time.Now()
-
-	out, err := os.Create(path.String())
-
-	if err != nil {
-		fmt.Println(path.String())
-		panic(err)
-	}
-
-	defer out.Close()
-
-	size, err := conn.FileSize(f.Path)
-
+	data, err := os.Create(outputPath)
 	if err != nil {
 		panic(err)
 	}
 
-	done := make(chan int64)
-
-	go PrintDownloadPercent(done, path.String(), int64(size), progress)
-
-	resp, err := conn.Retr(f.Path)
-
+	err = client.Retrieve(f.Path, data)
 	if err != nil {
 		panic(err)
 	}
-
-	defer resp.Close()
-
-	n, err := io.Copy(out, resp)
-
-	if err != nil {
-		panic(err)
-	}
-
-	done <- n
-
-	elapsed := time.Since(start)
-	log.Printf("Download completed in %s", elapsed)
 
 	go func () {
-		hash, _ := hash_file_md5(path.String())
+		hash, _ := hash_file_md5(outputPath)
 		if hash != f.Md5 {
-			fmt.Errorf("File %s has an invalid MD5 !", path)
+			log.Printf("File %s has an invalid MD5 !", outputPath)
 		}
 	}()
 }
