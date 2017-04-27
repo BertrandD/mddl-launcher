@@ -83,28 +83,32 @@ func PrintDownloadPercent(done chan int64, path string, total int64, progress *f
 
 type Manifest struct {
 	Files []File
+	Size int64
 }
 
 type File struct {
 	Path string
 	Md5  string
+	Size int64
+	Mode os.FileMode
 }
 
-func DownloadFile(client *goftp.Client, f File, dest string) {
+func DownloadFile(client *goftp.Client, f File, filesDir, dest string) {
 
 
 	outputPath := dest+f.Path
 
-	log.Printf("Downloading file %s from ftp to %s\n", f.Path, outputPath)
+	log.Printf("Downloading file %s from ftp to %s\n", filesDir+f.Path, outputPath)
 
 	Mkdir(path.Dir(outputPath))
 
-	data, err := os.Create(outputPath)
+	outputFile, err := os.Create(outputPath)
 	if err != nil {
 		panic(err)
 	}
+	outputFile.Chmod(f.Mode)
 
-	err = client.Retrieve(f.Path, data)
+	err = client.Retrieve(filesDir+f.Path, outputFile)
 	if err != nil {
 		panic(err)
 	}
