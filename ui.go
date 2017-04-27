@@ -14,8 +14,8 @@ import (
 	"net/http"
 )
 
-var ROOT_URL string
-var URL_LATEST string = ROOT_URL+"latest"
+var FTP_URL string
+var VERSION_URL string
 var MANIFEST_NAME string = "manifest.json"
 
 const LOCAL_APP_DIRECTORY = "./MiddleWar/"
@@ -34,6 +34,7 @@ type Progress struct {
 	Total int64
 	Current int64
 	Percent float64
+	CurrentFile utils.File
 }
 
 func main() {
@@ -54,29 +55,31 @@ func main() {
 
 	ui.Main(func() {
 		//name := ui.NewEntry()
-		button := ui.NewButton("Download latest version")
-		progress:= ui.NewProgressBar()
 		box := ui.NewVerticalBox()
-		bottom := ui.NewHorizontalBox()
-		top := ui.NewVerticalBox()
-		top.SetPadded(true)
-		manifest := ui.NewLabel("lorem ipsum dolor sit amet") // TODO : get welcome message from web, display changelog...
-		top.Append(manifest, true)
+			top := ui.NewVerticalBox()
+				top.SetPadded(true)
+				manifest := ui.NewLabel("lorem ipsum dolor sit amet") // TODO : get welcome message from web, display changelog...
+				top.Append(manifest, true)
+				versionBox := ui.NewHorizontalBox()
+					latestVersionLabel := ui.NewLabel("Latest version : "+latestVersion)
+					currentVersionLabel := ui.NewLabel("Current version : "+currentVersion)
+					versionBox.SetPadded(true)
+					versionBox.Append(latestVersionLabel, false)
+					versionBox.Append(currentVersionLabel, false)
+				top.Append(versionBox, false)
+			bottom := ui.NewHorizontalBox()
+				bottom.SetPadded(true)
+				progress:= ui.NewProgressBar()
+				button := ui.NewButton("Download latest version")
+				bottom.Append(progress, true)
+				bottom.Append(button, false)
+			fetching := ui.NewLabel("")
 
-		latestVersionLabel := ui.NewLabel("Latest version : "+latestVersion)
-		currentVersionLabel := ui.NewLabel("Current version : "+currentVersion)
-		versionBox := ui.NewHorizontalBox()
-		versionBox.SetPadded(true)
-		versionBox.Append(latestVersionLabel, false)
-		versionBox.Append(currentVersionLabel, false)
+			box.Append(top, true)
+			box.Append(bottom, false)
+			box.Append(fetching, false)
+			box.SetPadded(true)
 
-		top.Append(versionBox, false)
-		bottom.SetPadded(true)
-		bottom.Append(progress, true)
-		bottom.Append(button, false)
-		box.Append(top, true)
-		box.Append(bottom, false)
-		box.SetPadded(true)
 		window := ui.NewWindow("MiddleWar", 600, 500, false)
 		window.SetChild(box)
 		button.OnClicked(func(*ui.Button) {
@@ -86,9 +89,7 @@ func main() {
 				prog := Progress{}
 				go func() {
 					Update(os, &prog)
-					currentVersion = latestVersion
-					err = ioutil.WriteFile(LOCAl_VERSION_FILE, []byte(latestVersion), 0644)
-					check(err)
+					currentVersion, _ = getCurrentVersion()
 					bNeedUpdate = false
 					ui.QueueMain(func() {
 						button.SetText("Play")
@@ -96,7 +97,7 @@ func main() {
 						currentVersionLabel.SetText("Current version : "+currentVersion)
 					})
 				}()
-				go printProgress(progress, &prog)
+				go printProgress(progress, fetching, &prog)
 			} else {
 				Launch(os)
 			}
@@ -115,12 +116,6 @@ func main() {
 			})
 
 			utils.Mkdir(LOCAL_APP_DIRECTORY)
-
-			if err != nil {
-				err = ioutil.WriteFile(LOCAl_VERSION_FILE, []byte(latestVersion), 0644)
-				check(err)
-				bNeedUpdate = true
-			}
 
 			log.Println("Current version : " + string(currentVersion))
 			bNeedUpdate = bNeedUpdate || (string(currentVersion) != latestVersion)
@@ -141,13 +136,16 @@ func main() {
 	}
 }
 
-
-func printProgress(progressBar *ui.ProgressBar, progress *Progress) {
+func printProgress(progressBar *ui.ProgressBar, fetching *ui.Label, progress *Progress) {
 	for {
 		ui.QueueMain(func() {
+			fetching.SetText("Fetching file "+progress.CurrentFile.Path)
 			progressBar.SetValue(int(progress.Percent))
 		})
-		if progress.Percent == 100.0 {
+		if progress.Percent == 100.0 || progress.Percent == 0.0 {
+			ui.QueueMain(func() {
+				fetching.SetText("")
+			})
 			break
 		}
 		time.Sleep(time.Second/8)
@@ -162,8 +160,7 @@ func getCurrentVersion() (string, error) {
 }
 
 func GetLatestVersion() (version string, err error) {
-	return "v0.10.25", nil
-	response, err := http.Get(URL_LATEST)
+	response, err := http.Get(VERSION_URL)
 	if err != nil {
 		log.Fatal(err)
 		return "", err
@@ -178,8 +175,8 @@ func GetLatestVersion() (version string, err error) {
 func Update(OS string, progress *Progress) (err error){
 	log.Println("Downloading latest version... ")
 
-	log.Printf("Connecting to %s...\n", ROOT_URL)
-	client, err := goftp.Dial(ROOT_URL)
+	log.Printf("Connecting to %s...\n", FTP_URL)
+	client, err := goftp.Dial(FTP_URL)
 	if err != nil {
 		panic(err)
 	}
@@ -196,15 +193,36 @@ func Update(OS string, progress *Progress) (err error){
 	err = json.Unmarshal(file, &manifest)
 	check(err)
 
+
+	localManifest, err := utils.GetLocalManifest(LOCAL_APP_DIRECTORY)
+	check(err)
+
 	progress.Current = int64(0)
 	progress.Total = manifest.Size
+	files := []utils.File{}
 	for _, file := range manifest.Files {
+		if !hasGoodMd5(localManifest, file) {
+			files = append(files, file)
+		}
+	}
+
+	for _, file := range files {
 		utils.DownloadFile(client, file, FILES_DIR, LOCAL_APP_DIRECTORY)
+		progress.CurrentFile = file
 		progress.Current += file.Size
 		progress.Percent = float64(progress.Current) / float64(manifest.Size) * 100
 	}
 
 	return err
+}
+
+func hasGoodMd5(manifest *utils.Manifest, file utils.File) bool {
+	for _, v := range manifest.Files {
+		if "./"+v.Path == LOCAL_APP_DIRECTORY+file.Path {
+			return v.Md5 == file.Md5
+		}
+	}
+	return false
 }
 
 func Launch(os string) {
@@ -222,3 +240,4 @@ func check(e error) {
 		panic(e)
 	}
 }
+
