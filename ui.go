@@ -10,7 +10,6 @@ import (
 	"io/ioutil"
 	"os/exec"
 	"github.com/andlabs/ui"
-	"time"
 	"net/http"
 )
 
@@ -69,9 +68,9 @@ func main() {
 				top.Append(versionBox, false)
 			bottom := ui.NewHorizontalBox()
 				bottom.SetPadded(true)
-				progress:= ui.NewProgressBar()
+				progressBar := ui.NewProgressBar()
 				button := ui.NewButton("Download latest version")
-				bottom.Append(progress, true)
+				bottom.Append(progressBar, true)
 				bottom.Append(button, false)
 			fetching := ui.NewLabel("")
 
@@ -86,9 +85,9 @@ func main() {
 			button.Disable()
 			if bNeedUpdate {
 				button.SetText("Updating...")
-				prog := Progress{}
+				progress := Progress{}
 				go func() {
-					Update(os, &prog)
+					Update(os, &progress, progressBar, fetching)
 					currentVersion, _ = getCurrentVersion()
 					bNeedUpdate = false
 					ui.QueueMain(func() {
@@ -97,7 +96,6 @@ func main() {
 						currentVersionLabel.SetText("Current version : "+currentVersion)
 					})
 				}()
-				go printProgress(progress, fetching, &prog)
 			} else {
 				Launch(os)
 			}
@@ -136,24 +134,6 @@ func main() {
 	}
 }
 
-func printProgress(progressBar *ui.ProgressBar, fetching *ui.Label, progress *Progress) {
-	for {
-		ui.QueueMain(func() {
-			fetching.SetText("Fetching file "+progress.CurrentFile.Path)
-			progressBar.SetValue(int(progress.Percent))
-		})
-		if progress.Percent == 100.0 || progress.Percent == 0.0 {
-			ui.QueueMain(func() {
-				fetching.SetText("")
-			})
-			break
-		}
-		time.Sleep(time.Second/8)
-	}
-}
-
-
-
 func getCurrentVersion() (string, error) {
 	localVersion, err := ioutil.ReadFile(LOCAl_VERSION_FILE)
 	return string(localVersion), err
@@ -172,7 +152,7 @@ func GetLatestVersion() (version string, err error) {
 	}
 }
 
-func Update(OS string, progress *Progress) (err error){
+func Update(OS string, progress *Progress, progressBar *ui.ProgressBar, fetching *ui.Label) (err error){
 	log.Println("Downloading latest version... ")
 
 	log.Printf("Connecting to %s...\n", FTP_URL)
@@ -211,7 +191,16 @@ func Update(OS string, progress *Progress) (err error){
 		progress.CurrentFile = file
 		progress.Current += file.Size
 		progress.Percent = float64(progress.Current) / float64(manifest.Size) * 100
+		ui.QueueMain(func() {
+			fetching.SetText("Fetching file "+progress.CurrentFile.Path)
+			progressBar.SetValue(int(progress.Percent))
+		})
 	}
+
+	ui.QueueMain(func() {
+		fetching.SetText("")
+		progressBar.SetValue(int(100))
+	})
 
 	return err
 }
