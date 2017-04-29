@@ -115,7 +115,7 @@ func DownloadFile(client *goftp.Client, f File, filesDir, dest string) {
 
 	if f.Md5 != "" {
 		go func () {
-			hash, _ := hash_file_md5(outputPath)
+			hash, _ := HashFileMd5(outputPath)
 			if hash != f.Md5 {
 				log.Printf("File %s has an invalid MD5 !", outputPath)
 			}
@@ -188,7 +188,7 @@ func Untar(tarball, target string) error {
 }
 
 
-func hash_file_md5(filePath string) (string, error) {
+func HashFileMd5(filePath string) (string, error) {
 	//Initialize variable returnMD5String now in case an error has to be returned
 	var returnMD5String string
 
@@ -224,7 +224,7 @@ func GetLocalManifest(dir string) (*Manifest, error) {
 	size := int64(0)
 	err := filepath.Walk(dir, func(path string, f os.FileInfo, err error) error {
 		if !f.IsDir() {
-			hash, _ := hash_file_md5(path)
+			hash, _ := HashFileMd5(path)
 			manifest.Files = append(manifest.Files, File{Path: path, Md5: hash, Size: f.Size(), Mode: f.Mode()})
 			size += f.Size()
 		}
